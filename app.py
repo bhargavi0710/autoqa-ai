@@ -369,7 +369,6 @@ def run_scan():
             "--url",
             url,
             "--headless",
-            "--no-ai",
             "--output-dir",
             str(REPORT_DIR),
         ]
