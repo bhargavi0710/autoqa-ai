@@ -392,7 +392,11 @@ def run_scan():
         )
 
         if not html_files:
-            return _error_page("Scan completed but no HTML report was generated.")
+            debug = (result.stdout or "")[-800:] + (result.stderr or "")[-400:]
+            return _error_page(
+                f"Scan completed but no HTML report was generated.<br><br>"
+                f"<small style='font-family:monospace;color:#888'>{debug}</small>"
+          )
 
         report_content = html_files[0].read_text(encoding="utf-8")
         return report_content, 200, {"Content-Type": "text/html; charset=utf-8"}
