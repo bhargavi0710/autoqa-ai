@@ -671,14 +671,14 @@ class AutoTester:
         test_id = self._next_test_id()
         load_ms = page.load_time_ms
 
-        if load_ms > 7000:
+        if load_ms > 3000:
             status = "FAIL"
             severity = "High"
-            actual = f"Page load time: {load_ms:.0f}ms (exceeds 7000ms threshold)"
-        elif load_ms > 3000:
+            actual = f"Page load time: {load_ms:.0f}ms (exceeds 3000ms threshold)"
+        elif load_ms > 1500:
             status = "WARNING"
             severity = "Medium"
-            actual = f"Page load time: {load_ms:.0f}ms (exceeds 3000ms threshold)"
+            actual = f"Page load time: {load_ms:.0f}ms (exceeds 1500ms threshold)"
         else:
             status = "PASS"
             severity = "Info"
