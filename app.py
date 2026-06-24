@@ -12,7 +12,7 @@ from flask import Flask, request
 app = Flask(__name__)
 logger = logging.getLogger(__name__)
 
-REPORT_DIR = Path(__file__).resolve().parent / "reports"
+REPORT_DIR = Path("/tmp/autoqa-reports")
 
 
 @app.route("/")

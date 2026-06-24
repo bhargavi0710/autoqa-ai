@@ -53,40 +53,48 @@ def setup_driver(browser: str = "chrome", headless: bool = True) -> webdriver.Re
     if browser == "chrome":
         options = ChromeOptions()
 
-        if headless:
-            options.add_argument("--headless=new")
-
+        # Always headless
+        options.add_argument("--headless=new")
         options.add_argument("--no-sandbox")
         options.add_argument("--disable-dev-shm-usage")
-        options.add_argument("--window-size=1920,1080")
         options.add_argument("--disable-gpu")
+        options.add_argument("--window-size=1920,1080")
+        options.add_argument("--disable-extensions")
+        options.add_argument("--disable-setuid-sandbox")
+        options.add_argument("--remote-debugging-port=9222")
 
-        chrome_executable = (
-            "chromedriver.exe"
-            if platform.system() == "Windows"
-            else "chromedriver"
-        )
+        # Check if system Chromium exists (Railway/Linux)
+        system_chromium = Path("/usr/bin/chromium")
+        system_chromedriver = Path("/usr/bin/chromedriver")
 
-        driver_path = _resolve_driver_executable(
-            ChromeDriverManager().install(),
-            chrome_executable,
-        )
-
-        # Fix executable permissions on Linux/macOS
-        if platform.system() != "Windows":
-            os.chmod(
-                driver_path,
-                os.stat(driver_path).st_mode | stat.S_IEXEC
+        if system_chromium.exists() and system_chromedriver.exists():
+            # Railway environment — use system Chromium
+            logger.info("Using system Chromium at %s", system_chromium)
+            options.binary_location = str(system_chromium)
+            service = ChromeService(executable_path=str(system_chromedriver))
+        else:
+            # Local environment — use webdriver_manager
+            logger.info("Using webdriver-manager for ChromeDriver")
+            chrome_executable = (
+                "chromedriver.exe"
+                if platform.system() == "Windows"
+                else "chromedriver"
             )
+            driver_path = _resolve_driver_executable(
+                ChromeDriverManager().install(),
+                chrome_executable,
+            )
+            if platform.system() != "Windows":
+                os.chmod(
+                    driver_path,
+                    os.stat(driver_path).st_mode | stat.S_IEXEC
+                )
+            service = ChromeService(driver_path)
 
-        driver = webdriver.Chrome(
-            service=ChromeService(driver_path),
-            options=options,
-        )
+        driver = webdriver.Chrome(service=service, options=options)
 
     elif browser == "firefox":
         options = FirefoxOptions()
-
         if headless:
             options.add_argument("--headless")
 
@@ -95,19 +103,15 @@ def setup_driver(browser: str = "chrome", headless: bool = True) -> webdriver.Re
             if platform.system() == "Windows"
             else "geckodriver"
         )
-
         driver_path = _resolve_driver_executable(
             GeckoDriverManager().install(),
             firefox_executable,
         )
-
-        # Fix executable permissions on Linux/macOS
         if platform.system() != "Windows":
             os.chmod(
                 driver_path,
                 os.stat(driver_path).st_mode | stat.S_IEXEC
             )
-
         driver = webdriver.Firefox(
             service=FirefoxService(driver_path),
             options=options,
@@ -118,7 +122,6 @@ def setup_driver(browser: str = "chrome", headless: bool = True) -> webdriver.Re
 
     driver.implicitly_wait(5)
     driver.set_page_load_timeout(15)
-
     return driver
 
 
