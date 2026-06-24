@@ -1,0 +1,519 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AutoQA AI Report — {{ target_url }}</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+      background: #f1f5f9;
+      color: #1e293b;
+      line-height: 1.6;
+    }
+    .header {
+      background: #0f172a;
+      color: #ffffff;
+      padding: 24px 32px;
+    }
+    .header-top {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 16px;
+    }
+    .logo { font-size: 28px; font-weight: 700; letter-spacing: -0.5px; }
+    .logo span { color: #3b82f6; }
+    .meta { font-size: 14px; color: #94a3b8; }
+    .meta span { display: block; margin-top: 4px; }
+    .stat-cards {
+      display: flex;
+      gap: 16px;
+      margin-top: 24px;
+      flex-wrap: wrap;
+    }
+    .stat-card {
+      background: rgba(255,255,255,0.08);
+      border: 1px solid rgba(255,255,255,0.1);
+      border-radius: 12px;
+      padding: 16px 28px;
+      min-width: 140px;
+    }
+    .stat-card .label {
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: #94a3b8;
+      font-weight: 500;
+    }
+    .stat-card .value { font-size: 36px; font-weight: 700; margin-top: 4px; }
+    .stat-card.passed .value { color: #22c55e; }
+    .stat-card.failed .value { color: #ef4444; }
+    .stat-card.total .value { color: #ffffff; }
+    .container { max-width: 1400px; margin: 0 auto; padding: 32px; }
+    .card {
+      background: #ffffff;
+      border-radius: 12px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+      padding: 28px;
+      margin-bottom: 24px;
+    }
+    .section-title {
+      font-size: 16px;
+      font-weight: 600;
+      color: #0f172a;
+      margin-bottom: 16px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    /* Executive Summary */
+    .executive-summary {
+      border-left: 4px solid #3b82f6;
+    }
+    .executive-summary .summary-text p {
+      color: #374151;
+      font-size: 15px;
+      line-height: 1.8;
+      margin-bottom: 14px;
+    }
+    .executive-summary .summary-text p:last-child {
+      margin-bottom: 0;
+    }
+    /* Charts */
+    .charts-row {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 24px;
+    }
+    @media (max-width: 900px) { .charts-row { grid-template-columns: 1fr; } }
+    .chart-wrap { position: relative; height: 280px; }
+    /* Filters */
+    .filter-bar {
+      display: flex;
+      gap: 16px;
+      align-items: center;
+      flex-wrap: wrap;
+    }
+    .filter-bar label { font-size: 14px; font-weight: 500; color: #374151; }
+    .filter-bar select {
+      padding: 8px 14px;
+      border: 1px solid #e2e8f0;
+      border-radius: 8px;
+      font-family: inherit;
+      font-size: 14px;
+      min-width: 180px;
+      background: #f8fafc;
+      cursor: pointer;
+    }
+    .filter-bar select:focus { outline: 2px solid #3b82f6; }
+    /* Table */
+    table { width: 100%; border-collapse: collapse; font-size: 14px; }
+    th {
+      text-align: left;
+      padding: 12px 16px;
+      background: #f8fafc;
+      border-bottom: 2px solid #e2e8f0;
+      font-weight: 600;
+      color: #475569;
+      white-space: nowrap;
+    }
+    td { padding: 12px 16px; border-bottom: 1px solid #f1f5f9; vertical-align: middle; }
+    tr.row-pass { background: #f0fdf4; }
+    tr.row-fail { background: #fef2f2; cursor: pointer; transition: background 0.15s; }
+    tr.row-warning { background: #fefce8; }
+    tr.row-fail:hover { background: #fee2e2; }
+    .badge {
+      display: inline-block;
+      padding: 3px 10px;
+      border-radius: 9999px;
+      font-size: 12px;
+      font-weight: 600;
+      color: #ffffff;
+      white-space: nowrap;
+    }
+    .severity-Critical { background: #dc2626; }
+    .severity-High { background: #ea580c; }
+    .severity-Medium { background: #ca8a04; }
+    .severity-Low { background: #2563eb; }
+    .severity-Info { background: #6b7280; }
+    .status-FAIL { background: #dc2626; }
+    .status-PASS { background: #16a34a; }
+    .status-WARNING { background: #ca8a04; }
+    .url-cell { max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .url-cell a { color: #2563eb; text-decoration: none; }
+    .url-cell a:hover { text-decoration: underline; }
+    .ai-summary-cell { max-width: 260px; font-size: 13px; color: #374151; }
+    .expand-hint { font-size: 11px; color: #94a3b8; margin-top: 2px; }
+    /* Detail panel */
+    .detail-row { display: none; }
+    .detail-row.open { display: table-row; }
+    .detail-panel {
+      padding: 24px 28px;
+      background: #fafafa;
+      border-left: 4px solid #dc2626;
+    }
+    .detail-panel h4 {
+      font-size: 13px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: #64748b;
+      margin: 20px 0 8px;
+    }
+    .detail-panel h4:first-child { margin-top: 0; }
+    .detail-panel p { color: #374151; font-size: 14px; line-height: 1.6; }
+    .detail-panel ol { margin-left: 20px; }
+    .detail-panel li { margin-bottom: 6px; color: #374151; font-size: 14px; }
+    .compare-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 16px;
+      margin-top: 8px;
+    }
+    @media (max-width: 700px) { .compare-grid { grid-template-columns: 1fr; } }
+    .compare-box {
+      background: #ffffff;
+      border: 1px solid #e2e8f0;
+      border-radius: 8px;
+      padding: 14px;
+    }
+    .compare-box .label {
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: #64748b;
+      font-weight: 600;
+      margin-bottom: 6px;
+    }
+    .compare-box p { font-size: 14px; color: #374151; }
+    .ai-box {
+      background: #eff6ff;
+      border: 1px solid #bfdbfe;
+      border-radius: 8px;
+      padding: 14px;
+      margin-top: 8px;
+    }
+    .ai-box .label {
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: #1d4ed8;
+      font-weight: 600;
+      margin-bottom: 6px;
+    }
+    .ai-box p { font-size: 14px; color: #1e3a5f; }
+    .impact-box {
+      background: #fff7ed;
+      border: 1px solid #fed7aa;
+      border-radius: 8px;
+      padding: 14px;
+      margin-top: 8px;
+    }
+    .impact-box .label {
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: #c2410c;
+      font-weight: 600;
+      margin-bottom: 6px;
+    }
+    .impact-box p { font-size: 14px; color: #7c2d12; }
+    .screenshot-img {
+      max-width: 100%;
+      border: 1px solid #e2e8f0;
+      border-radius: 8px;
+      margin-top: 8px;
+    }
+    .footer {
+      text-align: center;
+      padding: 24px;
+      color: #94a3b8;
+      font-size: 13px;
+      border-top: 1px solid #e2e8f0;
+      margin-top: 8px;
+    }
+    .footer a { color: #3b82f6; text-decoration: none; }
+  </style>
+</head>
+<body>
+  <header class="header">
+    <div class="header-top">
+      <div class="logo">AutoQA <span>AI</span></div>
+      <div class="meta">
+        <span><strong>Target:</strong> {{ target_url }}</span>
+        <span><strong>Scan Date:</strong> {{ scan_datetime }}</span>
+        <span><strong>Browser:</strong> {{ browser | capitalize }}</span>
+      </div>
+    </div>
+    <div class="stat-cards">
+      <div class="stat-card total">
+        <div class="label">Total Tests</div>
+        <div class="value">{{ total_tests }}</div>
+      </div>
+      <div class="stat-card passed">
+        <div class="label">Passed</div>
+        <div class="value">{{ passed_tests }}</div>
+      </div>
+      <div class="stat-card failed">
+        <div class="label">Failed</div>
+        <div class="value">{{ failed_tests }}</div>
+      </div>
+    </div>
+  </header>
+
+  <div class="container">
+
+    <!-- Executive Summary -->
+    <div class="card executive-summary">
+      <div class="section-title">📋 Executive Summary</div>
+      <div class="summary-text">
+        {% for paragraph in executive_summary.split('\n\n') %}
+          {% if paragraph.strip() %}
+            <p>{{ paragraph.strip() }}</p>
+          {% endif %}
+        {% endfor %}
+      </div>
+    </div>
+
+    <!-- Charts -->
+    <div class="charts-row">
+      <div class="card">
+        <div class="section-title">📊 Severity Breakdown</div>
+        <div class="chart-wrap">
+          <canvas id="severityChart"></canvas>
+        </div>
+      </div>
+      <div class="card">
+        <div class="section-title">📁 Results by Category</div>
+        <div class="chart-wrap">
+          <canvas id="categoryChart"></canvas>
+        </div>
+      </div>
+    </div>
+
+    <!-- Filters -->
+    <div class="card">
+      <div class="filter-bar">
+        <label for="severityFilter">Filter by Severity:</label>
+        <select id="severityFilter">
+          <option value="all">All Severities</option>
+          <option value="Critical">Critical</option>
+          <option value="High">High</option>
+          <option value="Medium">Medium</option>
+          <option value="Low">Low</option>
+          <option value="Info">Info</option>
+        </select>
+        <label for="categoryFilter">Filter by Category:</label>
+        <select id="categoryFilter">
+          <option value="all">All Categories</option>
+          <option value="Functional">Functional</option>
+          <option value="Security">Security</option>
+          <option value="Performance">Performance</option>
+          <option value="Accessibility">Accessibility</option>
+          <option value="Link">Link</option>
+        </select>
+      </div>
+    </div>
+
+    <!-- Results Table -->
+    <div class="card" style="padding: 0; overflow-x: auto;">
+      <table id="resultsTable">
+        <thead>
+          <tr>
+            <th>Test ID</th>
+            <th>Test Name</th>
+            <th>Category</th>
+            <th>Severity</th>
+            <th>Status</th>
+            <th>Page URL</th>
+            <th>AI Summary</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for result in results %}
+          <tr class="result-row row-{{ result.status | lower }}"
+              data-severity="{{ result.severity }}"
+              data-category="{{ result.category }}"
+              data-test-id="{{ result.test_id }}"
+              {% if result.status == 'FAIL' %}onclick="toggleDetail('{{ result.test_id }}')"{% endif %}>
+            <td><strong>{{ result.test_id }}</strong></td>
+            <td>
+              {{ result.test_name }}
+              {% if result.status == 'FAIL' %}
+                <div class="expand-hint">▼ Click to expand</div>
+              {% endif %}
+            </td>
+            <td>{{ result.category }}</td>
+            <td><span class="badge severity-{{ result.severity }}">{{ result.severity }}</span></td>
+            <td><span class="badge status-{{ result.status }}">{{ result.status }}</span></td>
+            <td class="url-cell">
+              <a href="{{ result.page_url }}" target="_blank" onclick="event.stopPropagation()">
+                {{ result.page_url }}
+              </a>
+            </td>
+            <td class="ai-summary-cell">{{ result.summary or '—' }}</td>
+          </tr>
+          {% if result.status == 'FAIL' %}
+          <tr class="detail-row" id="detail-{{ result.test_id }}">
+            <td colspan="7">
+              <div class="detail-panel">
+                <h4>Precondition</h4>
+                <p>{{ result.precondition }}</p>
+
+                <h4>Steps</h4>
+                <ol>
+                  {% for step in result.steps %}
+                  <li>{{ step }}</li>
+                  {% endfor %}
+                </ol>
+
+                <h4>Expected vs Actual</h4>
+                <div class="compare-grid">
+                  <div class="compare-box">
+                    <div class="label">✅ Expected Result</div>
+                    <p>{{ result.expected_result }}</p>
+                  </div>
+                  <div class="compare-box">
+                    <div class="label">❌ Actual Result</div>
+                    <p>{{ result.actual_result }}</p>
+                  </div>
+                </div>
+
+                {% if result.recommended_fix %}
+                <h4>AI Recommended Fix</h4>
+                <div class="ai-box">
+                  <div class="label">🔧 Recommended Fix</div>
+                  <p>{{ result.recommended_fix }}</p>
+                </div>
+                {% endif %}
+
+                {% if result.business_impact %}
+                <h4>Business Impact</h4>
+                <div class="impact-box">
+                  <div class="label">⚠️ Business Impact</div>
+                  <p>{{ result.business_impact }}</p>
+                </div>
+                {% endif %}
+
+                {% if result.test_id in screenshots_b64 %}
+                <h4>Screenshot</h4>
+                <img class="screenshot-img"
+                     src="data:image/png;base64,{{ screenshots_b64[result.test_id] }}"
+                     alt="Failure screenshot for {{ result.test_id }}">
+                {% endif %}
+              </div>
+            </td>
+          </tr>
+          {% endif %}
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <footer class="footer">
+    Generated by <strong>AutoQA AI</strong> |
+    <a href="https://github.com/bhargavi0710/autoqa-ai" target="_blank">
+      github.com/bhargavi0710/autoqa-ai
+    </a>
+    <br>Scan duration: {{ "%.1f"|format(scan_duration_seconds) }} seconds
+  </footer>
+
+  <script>
+    const severityCounts = {
+      Critical: {{ severity_counts.Critical }},
+      High: {{ severity_counts.High }},
+      Medium: {{ severity_counts.Medium }},
+      Low: {{ severity_counts.Low }},
+      Info: {{ severity_counts.Info }}
+    };
+    const categoryCounts = {{ category_counts | tojson }};
+
+    new Chart(document.getElementById('severityChart'), {
+      type: 'doughnut',
+      data: {
+        labels: Object.keys(severityCounts),
+        datasets: [{
+          data: Object.values(severityCounts),
+          backgroundColor: ['#dc2626','#ea580c','#ca8a04','#2563eb','#6b7280'],
+          borderWidth: 2,
+          borderColor: '#ffffff'
+        }]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: { position: 'bottom', labels: { padding: 16, font: { size: 13 } } }
+        }
+      }
+    });
+
+    const categories = Object.keys(categoryCounts);
+    new Chart(document.getElementById('categoryChart'), {
+      type: 'bar',
+      data: {
+        labels: categories,
+        datasets: [
+          {
+            label: 'Pass',
+            data: categories.map(c => categoryCounts[c].pass || 0),
+            backgroundColor: '#16a34a',
+            borderRadius: 4
+          },
+          {
+            label: 'Fail',
+            data: categories.map(c => categoryCounts[c].fail || 0),
+            backgroundColor: '#dc2626',
+            borderRadius: 4
+          }
+        ]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        scales: {
+          x: { grid: { display: false } },
+          y: { beginAtZero: true, grid: { color: '#f1f5f9' } }
+        },
+        plugins: {
+          legend: { position: 'bottom', labels: { padding: 16, font: { size: 13 } } }
+        }
+      }
+    });
+
+    function toggleDetail(testId) {
+      const detailRow = document.getElementById('detail-' + testId);
+      if (detailRow) {
+        const isOpen = detailRow.classList.contains('open');
+        detailRow.classList.toggle('open');
+        detailRow.style.display = isOpen ? 'none' : 'table-row';
+      }
+    }
+
+    function applyFilters() {
+      const severity = document.getElementById('severityFilter').value;
+      const category = document.getElementById('categoryFilter').value;
+      document.querySelectorAll('.result-row').forEach(row => {
+        const match = (severity === 'all' || row.dataset.severity === severity) &&
+                      (category === 'all' || row.dataset.category === category);
+        row.style.display = match ? '' : 'none';
+        const detail = document.getElementById('detail-' + row.dataset.testId);
+        if (detail && !match) {
+          detail.style.display = 'none';
+          detail.classList.remove('open');
+        }
+      });
+    }
+
+    document.getElementById('severityFilter').addEventListener('change', applyFilters);
+    document.getElementById('categoryFilter').addEventListener('change', applyFilters);
+  </script>
+</body>
+</html>
