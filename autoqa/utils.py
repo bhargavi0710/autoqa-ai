@@ -52,8 +52,6 @@ def setup_driver(browser: str = "chrome", headless: bool = True) -> webdriver.Re
 
     if browser == "chrome":
         options = ChromeOptions()
-
-        # Always headless
         options.add_argument("--headless=new")
         options.add_argument("--no-sandbox")
         options.add_argument("--disable-dev-shm-usage")
@@ -63,18 +61,44 @@ def setup_driver(browser: str = "chrome", headless: bool = True) -> webdriver.Re
         options.add_argument("--disable-setuid-sandbox")
         options.add_argument("--remote-debugging-port=9222")
 
-        # Check if system Chromium exists (Railway/Linux)
-        system_chromium = Path("/usr/bin/chromium")
-        system_chromedriver = Path("/usr/bin/chromedriver")
+        # All possible chromium binary locations across Railway/nixpacks/Ubuntu
+        chromium_candidates = [
+            "/usr/bin/chromium",
+            "/usr/bin/chromium-browser",
+            "/usr/bin/google-chrome",
+            "/usr/bin/google-chrome-stable",
+            "/snap/bin/chromium",
+        ]
+        chromedriver_candidates = [
+            "/usr/bin/chromedriver",
+            "/usr/lib/chromium/chromedriver",
+            "/usr/lib/chromium-browser/chromedriver",
+        ]
 
-        if system_chromium.exists() and system_chromedriver.exists():
-            # Railway environment — use system Chromium
-            logger.info("Using system Chromium at %s", system_chromium)
-            options.binary_location = str(system_chromium)
-            service = ChromeService(executable_path=str(system_chromedriver))
+        chromium_path = next(
+            (p for p in chromium_candidates if Path(p).exists()), None
+        )
+        chromedriver_path = next(
+            (p for p in chromedriver_candidates if Path(p).exists()), None
+        )
+
+        # Also try finding via shell which command
+        if not chromium_path:
+            import shutil
+            chromium_path = shutil.which("chromium") or shutil.which("chromium-browser") or shutil.which("google-chrome")
+
+        if not chromedriver_path:
+            import shutil
+            chromedriver_path = shutil.which("chromedriver")
+
+        if chromium_path and chromedriver_path:
+            logger.info("Using system Chromium at %s", chromium_path)
+            logger.info("Using system ChromeDriver at %s", chromedriver_path)
+            options.binary_location = chromium_path
+            service = ChromeService(executable_path=chromedriver_path)
         else:
-            # Local environment — use webdriver_manager
-            logger.info("Using webdriver-manager for ChromeDriver")
+            logger.info("System Chromium not found, using webdriver-manager")
+            logger.info("Chromium found: %s | ChromeDriver found: %s", chromium_path, chromedriver_path)
             chrome_executable = (
                 "chromedriver.exe"
                 if platform.system() == "Windows"
@@ -92,37 +116,6 @@ def setup_driver(browser: str = "chrome", headless: bool = True) -> webdriver.Re
             service = ChromeService(driver_path)
 
         driver = webdriver.Chrome(service=service, options=options)
-
-    elif browser == "firefox":
-        options = FirefoxOptions()
-        if headless:
-            options.add_argument("--headless")
-
-        firefox_executable = (
-            "geckodriver.exe"
-            if platform.system() == "Windows"
-            else "geckodriver"
-        )
-        driver_path = _resolve_driver_executable(
-            GeckoDriverManager().install(),
-            firefox_executable,
-        )
-        if platform.system() != "Windows":
-            os.chmod(
-                driver_path,
-                os.stat(driver_path).st_mode | stat.S_IEXEC
-            )
-        driver = webdriver.Firefox(
-            service=FirefoxService(driver_path),
-            options=options,
-        )
-
-    else:
-        raise ValueError(f"Unsupported browser: {browser}")
-
-    driver.implicitly_wait(5)
-    driver.set_page_load_timeout(15)
-    return driver
 
 
 def create_output_dirs(output_dir: str) -> tuple[Path, Path]:
