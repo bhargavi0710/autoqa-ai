@@ -5,6 +5,8 @@ import json
 import logging
 import re
 import platform
+import os
+import stat
 
 from selenium import webdriver
 from selenium.webdriver.chrome.options import Options as ChromeOptions
@@ -21,7 +23,6 @@ def _resolve_driver_executable(manager_path: str, executable_name: str) -> str:
     """Resolve the actual WebDriver executable from webdriver-manager output."""
     path = Path(manager_path)
 
-    # webdriver-manager returned the executable directly
     if path.is_file():
         if path.name in (
             executable_name,
@@ -71,6 +72,13 @@ def setup_driver(browser: str = "chrome", headless: bool = True) -> webdriver.Re
             chrome_executable,
         )
 
+        # Fix executable permissions on Linux/macOS
+        if platform.system() != "Windows":
+            os.chmod(
+                driver_path,
+                os.stat(driver_path).st_mode | stat.S_IEXEC
+            )
+
         driver = webdriver.Chrome(
             service=ChromeService(driver_path),
             options=options,
@@ -92,6 +100,13 @@ def setup_driver(browser: str = "chrome", headless: bool = True) -> webdriver.Re
             GeckoDriverManager().install(),
             firefox_executable,
         )
+
+        # Fix executable permissions on Linux/macOS
+        if platform.system() != "Windows":
+            os.chmod(
+                driver_path,
+                os.stat(driver_path).st_mode | stat.S_IEXEC
+            )
 
         driver = webdriver.Firefox(
             service=FirefoxService(driver_path),
