@@ -7,14 +7,12 @@ import re
 import platform
 import os
 import stat
+import shutil
 
 from selenium import webdriver
 from selenium.webdriver.chrome.options import Options as ChromeOptions
 from selenium.webdriver.chrome.service import Service as ChromeService
-from selenium.webdriver.firefox.options import Options as FirefoxOptions
-from selenium.webdriver.firefox.service import Service as FirefoxService
 from webdriver_manager.chrome import ChromeDriverManager
-from webdriver_manager.firefox import GeckoDriverManager
 
 logger = logging.getLogger(__name__)
 
@@ -82,13 +80,14 @@ def setup_driver(browser: str = "chrome", headless: bool = True) -> webdriver.Re
             (p for p in chromedriver_candidates if Path(p).exists()), None
         )
 
-        # Also try finding via shell which command
         if not chromium_path:
-            import shutil
-            chromium_path = shutil.which("chromium") or shutil.which("chromium-browser") or shutil.which("google-chrome")
+            chromium_path = (
+                shutil.which("chromium")
+                or shutil.which("chromium-browser")
+                or shutil.which("google-chrome")
+            )
 
         if not chromedriver_path:
-            import shutil
             chromedriver_path = shutil.which("chromedriver")
 
         if chromium_path and chromedriver_path:
@@ -98,7 +97,11 @@ def setup_driver(browser: str = "chrome", headless: bool = True) -> webdriver.Re
             service = ChromeService(executable_path=chromedriver_path)
         else:
             logger.info("System Chromium not found, using webdriver-manager")
-            logger.info("Chromium found: %s | ChromeDriver found: %s", chromium_path, chromedriver_path)
+            logger.info(
+                "Chromium found: %s | ChromeDriver found: %s",
+                chromium_path,
+                chromedriver_path,
+            )
             chrome_executable = (
                 "chromedriver.exe"
                 if platform.system() == "Windows"
@@ -111,11 +114,48 @@ def setup_driver(browser: str = "chrome", headless: bool = True) -> webdriver.Re
             if platform.system() != "Windows":
                 os.chmod(
                     driver_path,
-                    os.stat(driver_path).st_mode | stat.S_IEXEC
+                    os.stat(driver_path).st_mode | stat.S_IEXEC,
                 )
             service = ChromeService(driver_path)
 
         driver = webdriver.Chrome(service=service, options=options)
+        driver.implicitly_wait(5)
+        driver.set_page_load_timeout(15)
+        return driver
+
+    elif browser == "firefox":
+        from selenium.webdriver.firefox.options import Options as FirefoxOptions
+        from selenium.webdriver.firefox.service import Service as FirefoxService
+        from webdriver_manager.firefox import GeckoDriverManager
+
+        options = FirefoxOptions()
+        if headless:
+            options.add_argument("--headless")
+
+        firefox_executable = (
+            "geckodriver.exe"
+            if platform.system() == "Windows"
+            else "geckodriver"
+        )
+        driver_path = _resolve_driver_executable(
+            GeckoDriverManager().install(),
+            firefox_executable,
+        )
+        if platform.system() != "Windows":
+            os.chmod(
+                driver_path,
+                os.stat(driver_path).st_mode | stat.S_IEXEC,
+            )
+        driver = webdriver.Firefox(
+            service=FirefoxService(driver_path),
+            options=options,
+        )
+        driver.implicitly_wait(5)
+        driver.set_page_load_timeout(15)
+        return driver
+
+    else:
+        raise ValueError(f"Unsupported browser: {browser}")
 
 
 def create_output_dirs(output_dir: str) -> tuple[Path, Path]:
