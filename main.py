@@ -132,6 +132,12 @@ def parse_args() -> argparse.Namespace:
         default="./reports",
         help="Directory to save reports and screenshots (default: ./reports)",
     )
+    parser.add_argument(
+        "--max-pages",
+        type=int,
+        default=20,
+        help="Maximum number of pages to crawl (default: 20)",
+    )
     return parser.parse_args()
 
 
@@ -180,7 +186,7 @@ def main() -> int:
         driver = setup_driver(browser=args.browser, headless=args.headless)
 
         print(f"{Fore.CYAN}Crawling website...{Style.RESET_ALL}")
-        crawler = SiteCrawler(args.url, driver, max_pages=20)
+        crawler = SiteCrawler(args.url, driver, max_pages=args.max_pages)
         pages = crawler.crawl()
         print(f"{Fore.CYAN}Crawled {len(pages)} pages{Style.RESET_ALL}")
 
