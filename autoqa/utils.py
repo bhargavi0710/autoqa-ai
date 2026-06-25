@@ -58,11 +58,14 @@ def setup_driver(browser: str = "chrome", headless: bool = True) -> webdriver.Re
         options.add_argument("--disable-extensions")
         options.add_argument("--disable-setuid-sandbox")
         options.add_argument("--remote-debugging-port=9222")
-        options.add_argument("--single-process")
-        options.add_argument("--no-zygote")
-        options.add_argument("--single-process")
         options.add_argument("--no-zygote")
         options.add_argument("--disable-software-rasterizer")
+        options.add_argument("--disable-dbus")
+        options.add_argument("--disable-features=VizDisplayCompositor")
+        options.add_argument("--disable-background-networking")
+        options.add_argument("--disable-default-apps")
+        options.add_argument("--disable-sync")
+        options.add_argument("--metrics-recording-only")
 
         # All possible chromium binary locations across Railway/nixpacks/Ubuntu
         chromium_candidates = [
