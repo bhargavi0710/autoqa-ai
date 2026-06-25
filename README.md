@@ -201,7 +201,7 @@ python main.py --url https://example.com --headless --export-csv --output-dir ./
 
 ---
 
-## Web Interface (Work In Progress)
+## Web Interface 
 
 A Flask web app wraps the CLI for browser-based access. Run it locally:
 
@@ -209,8 +209,6 @@ A Flask web app wraps the CLI for browser-based access. Run it locally:
 python app.py
 # Open http://localhost:5000
 ```
-
-> ⚠️ **Deployment note:** Cloud deployment via Docker on Railway is currently in progress. Chrome/Selenium in containerised environments requires careful configuration. The CLI works fully — the web UI is functional locally.
 
 ---
 
