@@ -35,6 +35,7 @@ def run_scan_worker(job_id: str, url: str) -> None:
         "--url",
         url,
         "--headless",
+        "--max-pages", "10",
         "--output-dir",
         str(job_report_dir),
     ]
@@ -42,7 +43,7 @@ def run_scan_worker(job_id: str, url: str) -> None:
     try:
         result = subprocess.run(
             cmd,
-            timeout=600,
+            timeout=480,
             capture_output=True,
             text=True,
         )
