@@ -35,10 +35,12 @@ def run_scan_worker(job_id: str, url: str) -> None:
         "--url",
         url,
         "--headless",
-        "--max-pages", "10",
+        "--max-pages", "5",
         "--output-dir",
         str(job_report_dir),
     ]
+
+    logger.info("Job %s cmd: %s", job_id, " ".join(cmd))
 
     try:
         result = subprocess.run(
@@ -48,10 +50,11 @@ def run_scan_worker(job_id: str, url: str) -> None:
             text=True,
         )
 
+        logger.info("Job %s exit code: %s", job_id, result.returncode)
         if result.stdout:
-            logger.info("Job %s stdout: %s", job_id, result.stdout[-2000:])
+            logger.info("Job %s stdout:\n%s", job_id, result.stdout[:5000])
         if result.stderr:
-            logger.warning("Job %s stderr: %s", job_id, result.stderr[-1000:])
+            logger.error("Job %s stderr:\n%s", job_id, result.stderr[:5000])
 
         html_files = sorted(
             job_report_dir.glob("*.html"),
@@ -71,7 +74,7 @@ def run_scan_worker(job_id: str, url: str) -> None:
 
     except subprocess.TimeoutExpired:
         jobs[job_id]["status"] = "error"
-        jobs[job_id]["error"] = "Scan timed out after 10 minutes."
+        jobs[job_id]["error"] = "Scan timed out after 8 minutes."
         logger.error("Job %s timed out", job_id)
     except Exception as exc:
         jobs[job_id]["status"] = "error"
