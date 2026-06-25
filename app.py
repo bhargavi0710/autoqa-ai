@@ -615,6 +615,15 @@ def _error_page(message: str) -> str:
 </body>
 </html>"""
 
+@app.route("/debug-chrome")
+def debug_chrome():
+    """Temporary: diagnose Chrome paths on Railway."""
+    result = subprocess.run(
+        [sys.executable, "check_chrome.py"],
+        capture_output=True, text=True, timeout=30
+    )
+    output = result.stdout + result.stderr
+    return f"<pre style='font-size:13px;padding:20px'>{output}</pre>"
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
