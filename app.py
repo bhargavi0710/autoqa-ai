@@ -3,16 +3,79 @@
 from __future__ import annotations
 
 import logging
+import os
 import subprocess
 import sys
+import threading
+import uuid
 from pathlib import Path
 
-from flask import Flask, request
+from flask import Flask, jsonify, request
 
 app = Flask(__name__)
 logger = logging.getLogger(__name__)
 
 REPORT_DIR = Path("/tmp/autoqa-reports")
+
+# In-memory job store: { job_id: { status, report_html, error } }
+jobs: dict[str, dict] = {}
+
+
+def run_scan_worker(job_id: str, url: str) -> None:
+    """Background thread: runs the scan and updates job store when done."""
+    jobs[job_id]["status"] = "running"
+    logger.info("Job %s started for %s", job_id, url)
+
+    job_report_dir = REPORT_DIR / job_id
+    job_report_dir.mkdir(parents=True, exist_ok=True)
+
+    cmd = [
+        sys.executable,
+        "main.py",
+        "--url",
+        url,
+        "--headless",
+        "--output-dir",
+        str(job_report_dir),
+    ]
+
+    try:
+        result = subprocess.run(
+            cmd,
+            timeout=600,
+            capture_output=True,
+            text=True,
+        )
+
+        if result.stdout:
+            logger.info("Job %s stdout: %s", job_id, result.stdout[-2000:])
+        if result.stderr:
+            logger.warning("Job %s stderr: %s", job_id, result.stderr[-1000:])
+
+        html_files = sorted(
+            job_report_dir.glob("*.html"),
+            key=lambda p: p.stat().st_mtime,
+            reverse=True,
+        )
+
+        if html_files:
+            jobs[job_id]["status"] = "done"
+            jobs[job_id]["report_html"] = html_files[0].read_text(encoding="utf-8")
+            logger.info("Job %s completed successfully", job_id)
+        else:
+            debug = (result.stdout or "")[-800:] + (result.stderr or "")[-400:]
+            jobs[job_id]["status"] = "error"
+            jobs[job_id]["error"] = f"No report generated. Output: {debug}"
+            logger.error("Job %s: no HTML report found", job_id)
+
+    except subprocess.TimeoutExpired:
+        jobs[job_id]["status"] = "error"
+        jobs[job_id]["error"] = "Scan timed out after 10 minutes."
+        logger.error("Job %s timed out", job_id)
+    except Exception as exc:
+        jobs[job_id]["status"] = "error"
+        jobs[job_id]["error"] = str(exc)
+        logger.error("Job %s failed: %s", job_id, exc, exc_info=True)
 
 
 @app.route("/")
@@ -90,10 +153,11 @@ input[type=url]{
     border-radius:12px;
     font-size:16px;
     margin-bottom:20px;
+    outline:none;
+    transition:border-color .2s, box-shadow .2s;
 }
 
 input[type=url]:focus{
-    outline:none;
     border-color:#2563eb;
     box-shadow:0 0 0 4px rgba(37,99,235,.15);
 }
@@ -113,6 +177,85 @@ button{
 
 button:hover{
     background:#1d4ed8;
+}
+
+button:disabled{
+    background:#94a3b8;
+    cursor:not-allowed;
+}
+
+.status-box{
+    display:none;
+    margin-top:24px;
+    padding:20px;
+    border-radius:12px;
+    background:#eff6ff;
+    border:1px solid #bfdbfe;
+}
+
+.status-box.error{
+    background:#fef2f2;
+    border-color:#fecaca;
+}
+
+.status-top{
+    display:flex;
+    align-items:center;
+    gap:10px;
+    margin-bottom:12px;
+}
+
+.spinner{
+    width:18px;
+    height:18px;
+    border:2px solid #bfdbfe;
+    border-top:2px solid #2563eb;
+    border-radius:50%;
+    animation:spin .8s linear infinite;
+    flex-shrink:0;
+}
+
+.status-box.error .spinner{
+    display:none;
+}
+
+.status-text{
+    font-size:15px;
+    font-weight:500;
+    color:#1e40af;
+}
+
+.status-box.error .status-text{
+    color:#991b1b;
+}
+
+.status-sub{
+    font-size:13px;
+    color:#64748b;
+    margin-bottom:12px;
+}
+
+.progress-track{
+    height:6px;
+    background:#dbeafe;
+    border-radius:3px;
+    overflow:hidden;
+}
+
+.progress-fill{
+    height:100%;
+    width:0%;
+    background:#2563eb;
+    border-radius:3px;
+    transition:width .6s ease;
+}
+
+.status-box.error .progress-fill{
+    background:#ef4444;
+}
+
+@keyframes spin{
+    100%{ transform:rotate(360deg); }
 }
 
 .stats{
@@ -182,70 +325,13 @@ button:hover{
     color:#64748b;
 }
 
-.loader{
-    display:none;
-    position:fixed;
-    inset:0;
-    background:rgba(255,255,255,.95);
-    z-index:9999;
-    justify-content:center;
-    align-items:center;
-    flex-direction:column;
-}
-
-.spinner{
-    width:70px;
-    height:70px;
-    border:7px solid #e2e8f0;
-    border-top:7px solid #2563eb;
-    border-radius:50%;
-    animation:spin 1s linear infinite;
-    margin-bottom:20px;
-}
-
-.loader h2{
-    margin-bottom:10px;
-}
-
-.loader p{
-    color:#64748b;
-}
-
-@keyframes spin{
-    100%{
-        transform:rotate(360deg);
-    }
-}
-
 @media(max-width:768px){
-
-.hero h1{
-    font-size:40px;
-}
-
-.scan-card{
-    padding:25px;
-}
-
+    .hero h1{ font-size:40px; }
+    .scan-card{ padding:25px; }
 }
 </style>
-
-<script>
-function showLoader(){
-    document.getElementById('loader').style.display='flex';
-}
-</script>
-
 </head>
 <body>
-
-<div id="loader" class="loader">
-    <div class="spinner"></div>
-    <h2>Running AutoQA Scan...</h2>
-    <p>
-        Initializing Browser • Crawling Website • Running Tests • Generating Report
-    </p>
-</div>
 
 <section class="hero">
     <h1>AutoQA AI</h1>
@@ -263,158 +349,230 @@ function showLoader(){
             with security checks, accessibility audits and AI-powered insights.
         </p>
 
-        <form action="/run" method="POST" onsubmit="showLoader()">
-            <input
-                type="url"
-                name="url"
-                placeholder="https://example.com"
-                required
-            >
+        <input type="url" id="url-input" placeholder="https://example.com" autocomplete="off">
+        <button id="scan-btn" onclick="startScan()">Start Automated Scan &rarr;</button>
 
-            <button type="submit">
-                Start Automated Scan →
-            </button>
-        </form>
+        <div class="status-box" id="status-box">
+            <div class="status-top">
+                <div class="spinner" id="spinner"></div>
+                <span class="status-text" id="status-text">Starting scan...</span>
+            </div>
+            <div class="status-sub" id="status-sub">This may take 2&ndash;5 minutes for large sites.</div>
+            <div class="progress-track">
+                <div class="progress-fill" id="progress-fill"></div>
+            </div>
+        </div>
 
         <p style="margin-top:15px;color:#94a3b8;font-size:14px;">
-            Typical scan duration: 2–5 minutes
+            Typical scan duration: 2&ndash;5 minutes
         </p>
     </div>
 </section>
 
 <section class="stats">
-
-<div class="stat-card">
-    <h3>⚡ Performance</h3>
-    <p>Page load testing and responsiveness analysis</p>
-</div>
-
-<div class="stat-card">
-    <h3>🔒 Security</h3>
-    <p>HTTP headers and vulnerability checks</p>
-</div>
-
-<div class="stat-card">
-    <h3>♿ Accessibility</h3>
-    <p>Automated WCAG compliance validation</p>
-</div>
-
-<div class="stat-card">
-    <h3>🤖 AI Analysis</h3>
-    <p>Root cause detection and remediation suggestions</p>
-</div>
-
+    <div class="stat-card">
+        <h3>&#9889; Performance</h3>
+        <p>Page load testing and responsiveness analysis</p>
+    </div>
+    <div class="stat-card">
+        <h3>&#128274; Security</h3>
+        <p>HTTP headers and vulnerability checks</p>
+    </div>
+    <div class="stat-card">
+        <h3>&#9855; Accessibility</h3>
+        <p>Automated WCAG compliance validation</p>
+    </div>
+    <div class="stat-card">
+        <h3>&#129302; AI Analysis</h3>
+        <p>Root cause detection and remediation suggestions</p>
+    </div>
 </section>
 
 <section class="features">
-
-<h2>Platform Features</h2>
-
-<div class="feature-grid">
-
-<div class="feature">
-    <h3>Website Crawling</h3>
-    <p>
-        Automatically discover pages and collect testing targets.
-    </p>
-</div>
-
-<div class="feature">
-    <h3>Automated QA Testing</h3>
-    <p>
-        Validate performance, functionality and reliability.
-    </p>
-</div>
-
-<div class="feature">
-    <h3>Accessibility Audits</h3>
-    <p>
-        Identify accessibility issues using automated checks.
-    </p>
-</div>
-
-<div class="feature">
-    <h3>Professional Reports</h3>
-    <p>
-        Generate detailed HTML reports with actionable findings.
-    </p>
-</div>
-
-</div>
-
+    <h2>Platform Features</h2>
+    <div class="feature-grid">
+        <div class="feature">
+            <h3>Website Crawling</h3>
+            <p>Automatically discover pages and collect testing targets.</p>
+        </div>
+        <div class="feature">
+            <h3>Automated QA Testing</h3>
+            <p>Validate performance, functionality and reliability.</p>
+        </div>
+        <div class="feature">
+            <h3>Accessibility Audits</h3>
+            <p>Identify accessibility issues using automated checks.</p>
+        </div>
+        <div class="feature">
+            <h3>Professional Reports</h3>
+            <p>Generate detailed HTML reports with actionable findings.</p>
+        </div>
+    </div>
 </section>
 
 <div class="footer">
-    AutoQA AI • Automated Website Quality Assurance Platform
+    AutoQA AI &bull; Automated Website Quality Assurance Platform
 </div>
+
+<script>
+let pollInterval = null;
+let progressVal = 0;
+
+function startScan() {
+    const url = document.getElementById('url-input').value.trim();
+    if (!url.startsWith('http')) {
+        alert('Please enter a valid URL starting with http:// or https://');
+        return;
+    }
+
+    document.getElementById('scan-btn').disabled = true;
+    showStatus('Submitting scan...', 'Connecting to server...', false);
+    progressVal = 5;
+    setProgress(progressVal);
+
+    fetch('/scan', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: 'url=' + encodeURIComponent(url)
+    })
+    .then(r => r.json())
+    .then(data => {
+        if (data.job_id) {
+            showStatus('Scan started', 'Crawling site and running tests...', false);
+            pollJob(data.job_id);
+        } else {
+            showStatus('Failed to start scan', data.error || 'Unknown error', true);
+            document.getElementById('scan-btn').disabled = false;
+        }
+    })
+    .catch(err => {
+        showStatus('Network error', String(err), true);
+        document.getElementById('scan-btn').disabled = false;
+    });
+}
+
+function pollJob(jobId) {
+    clearInterval(pollInterval);
+    let elapsed = 0;
+
+    pollInterval = setInterval(function() {
+        elapsed += 3;
+
+        if (progressVal < 30) progressVal += 3;
+        else if (progressVal < 70) progressVal += 1.5;
+        else if (progressVal < 90) progressVal += 0.5;
+        setProgress(progressVal);
+
+        var mainMsg, subMsg;
+        if (elapsed < 20) {
+            mainMsg = 'Initialising browser...';
+            subMsg = 'Starting headless Chrome on the server.';
+        } else if (elapsed < 60) {
+            mainMsg = 'Crawling pages...';
+            subMsg = 'Discovering and loading pages on the target site.';
+        } else if (elapsed < 150) {
+            mainMsg = 'Running tests...';
+            subMsg = 'Checking performance, security, accessibility and functionality.';
+        } else if (elapsed < 240) {
+            mainMsg = 'Generating AI analysis...';
+            subMsg = 'AI is analysing findings and writing recommendations.';
+        } else {
+            mainMsg = 'Finalising report...';
+            subMsg = 'Almost done — building your HTML report.';
+        }
+        showStatus(mainMsg, subMsg, false);
+
+        fetch('/status/' + jobId)
+        .then(r => r.json())
+        .then(function(data) {
+            if (data.status === 'done') {
+                clearInterval(pollInterval);
+                setProgress(100);
+                showStatus('Scan complete!', 'Loading your report...', false);
+                setTimeout(function() {
+                    window.location.href = '/report/' + jobId;
+                }, 600);
+            } else if (data.status === 'error') {
+                clearInterval(pollInterval);
+                showStatus('Scan failed', data.error || 'Unknown error', true);
+                document.getElementById('scan-btn').disabled = false;
+            }
+        })
+        .catch(function() {});
+    }, 3000);
+}
+
+function showStatus(main, sub, isError) {
+    var box = document.getElementById('status-box');
+    box.style.display = 'block';
+    box.className = 'status-box' + (isError ? ' error' : '');
+    document.getElementById('status-text').textContent = main;
+    document.getElementById('status-sub').textContent = sub;
+    if (isError) setProgress(100);
+}
+
+function setProgress(val) {
+    document.getElementById('progress-fill').style.width = val + '%';
+}
+</script>
 
 </body>
 </html>
 """
 
 
-@app.route("/run", methods=["POST"])
-def run_scan():
-    """Execute AutoQA scan via subprocess and return HTML report."""
-    try:
-        url = request.form.get("url", "").strip()
-        if not url.startswith(("http://", "https://")):
-            return _error_page("Please enter a valid URL starting with http:// or https://")
+@app.route("/scan", methods=["POST"])
+def submit_scan():
+    """Accept scan request, spin up background thread, return job_id immediately."""
+    url = request.form.get("url", "").strip()
+    if not url.startswith(("http://", "https://")):
+        return jsonify({"error": "Invalid URL — must start with http:// or https://"}), 400
 
-        REPORT_DIR.mkdir(parents=True, exist_ok=True)
+    job_id = str(uuid.uuid4())[:8]
+    jobs[job_id] = {"status": "queued", "report_html": None, "error": None}
 
-        cmd = [
-            sys.executable,
-            "main.py",
-            "--url",
-            url,
-            "--headless",
-            "--output-dir",
-            str(REPORT_DIR),
-        ]
+    thread = threading.Thread(
+        target=run_scan_worker,
+        args=(job_id, url),
+        daemon=True,
+    )
+    thread.start()
 
-        result = subprocess.run(
-            cmd,
-            timeout=600,
-            capture_output=True,
-            text=True,
-        )
+    logger.info("Job %s queued for %s", job_id, url)
+    return jsonify({"job_id": job_id})
 
-        if result.returncode not in (0, 1):
-            error_msg = result.stderr or result.stdout or "Unknown error during scan"
-            logger.error("Scan subprocess failed: %s", error_msg)
-            return _error_page(f"Scan failed: {error_msg[:500]}")
 
-        html_files = sorted(
-            REPORT_DIR.glob("*.html"),
-            key=lambda path: path.stat().st_mtime,
-            reverse=True,
-        )
+@app.route("/status/<job_id>")
+def job_status(job_id: str):
+    """Return current job status for polling."""
+    job = jobs.get(job_id)
+    if not job:
+        return jsonify({"error": "Job not found"}), 404
+    return jsonify({
+        "status": job["status"],
+        "error": job.get("error"),
+    })
 
-        if not html_files:
-            debug = (result.stdout or "")[-800:] + (result.stderr or "")[-400:]
-            return _error_page(
-                f"Scan completed but no HTML report was generated.<br><br>"
-                f"<small style='font-family:monospace;color:#888'>{debug}</small>"
-          )
 
-        report_content = html_files[0].read_text(encoding="utf-8")
-        return report_content, 200, {"Content-Type": "text/html; charset=utf-8"}
-
-    except subprocess.TimeoutExpired:
-      logger.error("Scan timed out after 600 seconds")
-      return _error_page(
-        "Scan timed out after 10 minutes. Try a smaller website."
-      )
-    except Exception as exc:
-        logger.error("Run scan error: %s", exc, exc_info=True)
-        return _error_page(f"An error occurred: {exc}")
+@app.route("/report/<job_id>")
+def view_report(job_id: str):
+    """Serve the completed HTML report."""
+    job = jobs.get(job_id)
+    if not job:
+        return _error_page("Report not found. It may have expired — please run a new scan."), 404
+    if job["status"] == "error":
+        return _error_page(f"Scan failed: {job.get('error', 'Unknown error')}"), 500
+    if job["status"] != "done":
+        return _error_page(
+            f"Report not ready yet (status: {job['status']}). "
+            f"Please wait and refresh."
+        ), 202
+    return job["report_html"], 200, {"Content-Type": "text/html; charset=utf-8"}
 
 
 def _error_page(message: str) -> str:
     """Return a friendly HTML error page."""
-    return f"""
-<!DOCTYPE html>
+    return f"""<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
@@ -434,25 +592,26 @@ def _error_page(message: str) -> str:
       background: #ffffff;
       border-radius: 12px;
       padding: 40px;
-      max-width: 500px;
+      max-width: 560px;
+      width: 100%;
       box-shadow: 0 4px 24px rgba(0,0,0,0.08);
       text-align: center;
     }}
     h1 {{ color: #dc2626; font-size: 24px; margin-bottom: 16px; }}
-    p {{ color: #64748b; line-height: 1.6; }}
-    a {{ color: #2563eb; text-decoration: none; }}
+    p {{ color: #64748b; line-height: 1.6; font-size: 14px; word-break: break-word; }}
+    a {{ color: #2563eb; text-decoration: none; display: inline-block; margin-top: 24px; }}
   </style>
 </head>
 <body>
   <div class="error-card">
     <h1>Scan Error</h1>
     <p>{message}</p>
-    <p style="margin-top: 24px;"><a href="/">← Back to Home</a></p>
+    <a href="/">&#8592; Back to Home</a>
   </div>
 </body>
-</html>
-"""
+</html>"""
 
 
 if __name__ == "__main__":
-    app.run(debug=False, host="0.0.0.0", port=5000)
+    port = int(os.environ.get("PORT", 5000))
+    app.run(debug=False, host="0.0.0.0", port=port)
