@@ -66,16 +66,14 @@ def setup_driver(browser: str = "chrome", headless: bool = True) -> webdriver.Re
 
         # All possible chromium binary locations across Railway/nixpacks/Ubuntu
         chromium_candidates = [
-            "/nix/store/d3y4g1jphjqnx6zbkk87fk8fgfb769km-chromium-130.0.6723.116/bin/chromium",
             "/usr/bin/chromium",
             "/usr/bin/chromium-browser",
             "/usr/bin/google-chrome",
             "/usr/bin/google-chrome-stable",
-            "/snap/bin/chromium",
         ]
         chromedriver_candidates = [
-            "/nix/store/d84a8bh08f9f8455drz82dg7a00r7h13-chromedriver-unwrapped-130.0.6723.116/bin/chromedriver",
             "/usr/bin/chromedriver",
+            "/usr/bin/chromium-driver",
             "/usr/lib/chromium/chromedriver",
             "/usr/lib/chromium-browser/chromedriver",
         ]
