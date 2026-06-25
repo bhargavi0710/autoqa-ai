@@ -267,8 +267,7 @@ push to main
      ├── lint        flake8 autoqa/ --max-line-length=120
      │
      ├── test        pytest tests/ -v --tb=short
-     │               17/19 tests passing
-     │
+     │               
      └── demo-run    python main.py --url https://books.toscrape.com
                      --headless --no-ai --output-dir ./demo-reports
 ```
